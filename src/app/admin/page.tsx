@@ -1,5 +1,6 @@
 import prisma from "@/lib/prisma";
 import { Card } from "@/components/ui/Card";
+import { Button } from "@/components/ui/Button";
 
 export default async function AdminDashboard() {
   const [userCount, courseCount, jobCount, activeJobs] = await Promise.all([
@@ -11,8 +12,15 @@ export default async function AdminDashboard() {
 
   return (
     <div>
-      <h1 className="text-3xl font-semibold text-slate-900 mb-2">System Overview</h1>
-      <p className="text-slate-500 mb-8">High-level metrics and system health.</p>
+      <div className="flex justify-between items-start mb-8">
+        <div>
+          <h1 className="text-3xl font-semibold text-slate-900 mb-2">System Overview</h1>
+          <p className="text-slate-500">High-level metrics and system health.</p>
+        </div>
+        <a href="/api/admin/report" download>
+          <Button variant="default">Download System Report</Button>
+        </a>
+      </div>
 
       <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
         <Card className="p-6 bg-white border border-slate-200 shadow-sm rounded-xl">
