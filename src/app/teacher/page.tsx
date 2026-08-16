@@ -1,6 +1,7 @@
 import prisma from '@/lib/prisma';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
+import Link from 'next/link';
 
 export default async function TeacherDashboard() {
   // Fetch the seeded teacher user (Dr. Alan Smith)
@@ -64,9 +65,11 @@ export default async function TeacherDashboard() {
                         {course.description}
                       </p>
                     </div>
-                    <Button variant="outline" size="sm">
-                      Manage Course
-                    </Button>
+                    <Link href={`/teacher/course/${course.id}`}>
+                      <Button variant="outline" size="sm">
+                        Manage Course
+                      </Button>
+                    </Link>
                   </div>
                 </Card>
               ))}

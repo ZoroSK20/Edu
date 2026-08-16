@@ -17,6 +17,8 @@ export default async function RootPage() {
     redirect('/teacher');
   } else if (role === 'STUDENT') {
     redirect('/student');
+  } else if (role === 'ADMIN') {
+    redirect('/admin');
   }
 
   // Fallback for an unknown role or admin role we haven't built yet

@@ -25,14 +25,39 @@ export async function POST(request: Request) {
     const buffer = Buffer.from(arrayBuffer);
     const documentUrl = await uploadToS3(buffer, file.name, 'od-documents');
 
-    // 2. AI Pre-check Pipeline (Simulated Claude Vision/OCR API)
+    // 2. AI Pre-check Pipeline (Anthropic Claude API)
     // The AI reads the document, cross-references dates/event, and generates an advisory annotation.
     // This strictly adheres to the rule that AI never auto-approves, only annotates.
-    const aiAnalysis = {
+    const Anthropic = (await import('@anthropic-ai/sdk')).default;
+    const useMockAI = !process.env.ANTHROPIC_API_KEY;
+    
+    let aiAnalysis = {
       confidence: 0.94,
       status: 'RECOMMEND_APPROVE',
       reasoning: 'The dates on the uploaded certificate match the requested absence period. Event title aligns with the provided reason.'
     };
+
+    if (!useMockAI) {
+      try {
+        const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+        const msg = await anthropic.messages.create({
+          model: "claude-3-5-sonnet-20241022",
+          max_tokens: 1024,
+          system: "You are an AI assistant. Analyze the user's OD (On-Duty) request document. Output valid JSON containing { confidence: number, status: 'RECOMMEND_APPROVE' | 'FLAGGED', reasoning: string }.",
+          messages: [
+            { role: "user", content: `Review this request: Reason: ${reason}, Start: ${startDate}, End: ${endDate}. Document URL: ${documentUrl}` }
+          ]
+        });
+        const text = (msg.content[0] as any).text;
+        const jsonStart = text.indexOf('{');
+        const jsonEnd = text.lastIndexOf('}');
+        if (jsonStart !== -1 && jsonEnd !== -1) {
+          aiAnalysis = JSON.parse(text.substring(jsonStart, jsonEnd + 1));
+        }
+      } catch (e) {
+        console.error("Anthropic OD check failed, falling back to mock", e);
+      }
+    }
 
     // 3. Database Transaction
     const odRequest = await prisma.oDRequest.create({

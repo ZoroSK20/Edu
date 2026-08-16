@@ -44,6 +44,17 @@ async function main() {
     },
   });
 
+  const admin = await prisma.user.upsert({
+    where: { email: 'admin@portal.edu' },
+    update: { passwordHash: defaultPasswordHash },
+    create: {
+      email: 'admin@portal.edu',
+      name: 'System Administrator',
+      passwordHash: defaultPasswordHash,
+      role: 'ADMIN',
+    },
+  });
+
   console.log('✅ Users seeded');
 
   // ---------------------------------------------------------

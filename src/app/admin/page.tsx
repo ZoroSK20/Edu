@@ -1,22 +1,37 @@
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/lib/auth";
+import prisma from "@/lib/prisma";
 import { Card } from "@/components/ui/Card";
 
 export default async function AdminDashboard() {
-  const session = await getServerSession(authOptions);
+  const [userCount, courseCount, jobCount, activeJobs] = await Promise.all([
+    prisma.user.count(),
+    prisma.course.count(),
+    prisma.job.count(),
+    prisma.job.count({ where: { status: 'QUEUED' } })
+  ]);
 
   return (
-    <div className="max-w-5xl mx-auto px-6 py-16">
-      <h1 className="text-2xl font-medium text-ink mb-1">
-        Welcome, {session?.user?.name}
-      </h1>
-      <p className="text-sm text-ink-soft mb-8">
-        Admin dashboard — manage users, courses, classes and system-wide
-        reports lands here in Phase 14.
-      </p>
-      <Card className="text-sm text-ink-soft">
-        This route is confirmed working (role-guarded, session-aware).
-      </Card>
+    <div>
+      <h1 className="text-3xl font-semibold text-slate-900 mb-2">System Overview</h1>
+      <p className="text-slate-500 mb-8">High-level metrics and system health.</p>
+
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+        <Card className="p-6 bg-white border border-slate-200 shadow-sm rounded-xl">
+          <h3 className="text-sm font-medium text-slate-500 mb-1">Total Users</h3>
+          <p className="text-3xl font-semibold text-slate-900">{userCount}</p>
+        </Card>
+        <Card className="p-6 bg-white border border-slate-200 shadow-sm rounded-xl">
+          <h3 className="text-sm font-medium text-slate-500 mb-1">Active Courses</h3>
+          <p className="text-3xl font-semibold text-slate-900">{courseCount}</p>
+        </Card>
+        <Card className="p-6 bg-white border border-slate-200 shadow-sm rounded-xl">
+          <h3 className="text-sm font-medium text-slate-500 mb-1">Total Jobs</h3>
+          <p className="text-3xl font-semibold text-slate-900">{jobCount}</p>
+        </Card>
+        <Card className="p-6 bg-blue-50 border-blue-200 shadow-sm rounded-xl">
+          <h3 className="text-sm font-medium text-blue-800 mb-1">Jobs Queued</h3>
+          <p className="text-3xl font-semibold text-blue-900">{activeJobs}</p>
+        </Card>
+      </div>
     </div>
   );
 }
