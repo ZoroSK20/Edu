@@ -1,0 +1,40 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  body {
+    @apply bg-bone text-ink antialiased;
+    font-feature-settings: "cv11", "ss01";
+  }
+
+  ::selection {
+    @apply bg-maroon/20;
+  }
+
+  *:focus-visible {
+    outline: 2px solid theme("colors.maroon.DEFAULT");
+    outline-offset: 2px;
+  }
+}
+
+@layer components {
+  .card {
+    @apply bg-surface border border-border rounded-card;
+  }
+
+  .btn-primary {
+    @apply bg-ink text-bone rounded-control px-4 py-2 text-sm font-medium
+      transition-colors hover:bg-ink/90 active:scale-[0.98];
+  }
+
+  .btn-accent {
+    @apply bg-maroon text-bone rounded-control px-4 py-2 text-sm font-medium
+      transition-colors hover:bg-maroon-dark active:scale-[0.98];
+  }
+
+  .btn-ghost {
+    @apply border border-border text-ink-soft rounded-control px-4 py-2 text-sm
+      transition-colors hover:bg-bone active:scale-[0.98];
+  }
+}

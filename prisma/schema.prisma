@@ -1,0 +1,379 @@
+// Education Management Portal — full data model
+// Covers architecture.md Section 14 ER diagram in full, plus:
+//  - Note (student notes-on-topic add-on)
+//  - Job (DB-backed async queue, replaces Redis/BullMQ per MASTER_PROMPT.md Section 4)
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+
+
+
+
+
+
+
+
+
+
+model User {
+  id           String   @id @default(cuid())
+  name         String
+  email        String   @unique
+  passwordHash String
+  role String
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  coursesTaught         Course[]                @relation("TeacherCourses")
+  enrollments           Enrollment[]
+  submissions           Submission[]
+  attendanceRecords     Attendance[]
+  odRequests            ODRequest[]             @relation("StudentOD")
+  odReviews             ODRequest[]             @relation("ReviewerOD")
+  marks                 Mark[]
+  papers                Paper[]
+  notes                 Note[]
+  aiInsights            AIInsight[]
+  teachingInterventions TeachingIntervention[]
+  notifications         Notification[]
+  timetableUpdates      TimetableUpdate[]
+
+  @@index([role])
+}
+
+model Course {
+  id          String   @id @default(cuid())
+  title       String
+  code        String   @unique
+  description String?
+  credits     Int      @default(3)
+  teacherId   String
+  teacher     User     @relation("TeacherCourses", fields: [teacherId], references: [id])
+  createdAt   DateTime @default(now())
+
+  topics             CourseTopic[]
+  enrollments        Enrollment[]
+  timetableSlots      TimetableSlot[]
+  assignments        Assignment[]
+  attendanceRecords  Attendance[]
+  exams              Exam[]
+  papers             Paper[]
+  classInsights      ClassInsight[]
+  improvementMetrics ImprovementMetric[]
+
+  @@index([teacherId])
+}
+
+// Self-referencing tree — every AI topic reference must resolve to a row here
+// (architecture.md Section 10, the single most load-bearing rule in the spec)
+model CourseTopic {
+  id             String       @id @default(cuid())
+  courseId       String
+  course         Course       @relation(fields: [courseId], references: [id])
+  parentTopicId  String?
+  parent         CourseTopic? @relation("TopicTree", fields: [parentTopicId], references: [id])
+  children       CourseTopic[] @relation("TopicTree")
+  title          String
+  order          Int          @default(0)
+  announcedAt    DateTime?
+  createdAt      DateTime     @default(now())
+
+  timetableSlots         TimetableSlot[]
+  notes                  Note[]
+  paperAnalyses          PaperAnalysis[]
+  aiInsights             AIInsight[]
+  classInsights          ClassInsight[]
+  teachingInterventions  TeachingIntervention[]
+  improvementMetrics     ImprovementMetric[]
+
+  @@index([courseId])
+  @@index([parentTopicId])
+}
+
+model Enrollment {
+  id         String   @id @default(cuid())
+  studentId  String
+  student    User     @relation(fields: [studentId], references: [id])
+  courseId   String
+  course     Course   @relation(fields: [courseId], references: [id])
+  enrolledAt DateTime @default(now())
+
+  @@unique([studentId, courseId])
+}
+
+model TimetableSlot {
+  id         String   @id @default(cuid())
+  courseId   String
+  course     Course   @relation(fields: [courseId], references: [id])
+  dayOfWeek  Int // 0=Mon .. 6=Sun, recurring weekly pattern
+  startTime  String // "09:00"
+  endTime    String // "10:00"
+  room       String?
+  topicId    String?
+  topic      CourseTopic? @relation(fields: [topicId], references: [id])
+
+  updates TimetableUpdate[]
+
+  @@index([courseId])
+}
+
+// A "shift" is a dated override of one instance of a recurring slot —
+// this is what fans out the student notification + notes-prep add-on.
+model TimetableUpdate {
+  id            String   @id @default(cuid())
+  slotId        String
+  slot          TimetableSlot @relation(fields: [slotId], references: [id])
+  updatedById   String
+  updatedBy     User     @relation(fields: [updatedById], references: [id])
+  effectiveDate DateTime // which single occurrence this override applies to
+  oldStartTime  String?
+  newStartTime  String?
+  oldRoom       String?
+  newRoom       String?
+  reason        String?
+  createdAt     DateTime @default(now())
+
+  @@index([slotId])
+}
+
+model Assignment {
+  id          String   @id @default(cuid())
+  courseId    String
+  course      Course   @relation(fields: [courseId], references: [id])
+  title       String
+  description String?
+  dueAt       DateTime
+  createdAt   DateTime @default(now())
+
+  submissions Submission[]
+
+  @@index([courseId])
+}
+
+model Submission {
+  id           String   @id @default(cuid())
+  assignmentId String
+  assignment   Assignment @relation(fields: [assignmentId], references: [id])
+  studentId    String
+  student      User     @relation(fields: [studentId], references: [id])
+  submittedAt  DateTime @default(now())
+  fileUrl      String?
+  marksAwarded Float?
+  feedback     String?
+
+  @@unique([assignmentId, studentId])
+}
+
+model Attendance {
+  id        String            @id @default(cuid())
+  studentId String
+  student   User              @relation(fields: [studentId], references: [id])
+  courseId  String
+  course    Course            @relation(fields: [courseId], references: [id])
+  date      DateTime
+  status String
+
+  @@unique([studentId, courseId, date])
+}
+
+// AI annotation sits alongside — never instead of — the human decision.
+// aiStatus/aiConfidence are advisory only (architecture.md Section 7, Section 20/27).
+model ODRequest {
+  id            String    @id @default(cuid())
+  studentId     String
+  student       User      @relation("StudentOD", fields: [studentId], references: [id])
+  reason        String
+  eventName     String?
+  startDate     DateTime
+  endDate       DateTime
+  documentUrl   String
+  aiStatus      String? // e.g. "consistent" | "flagged"
+  aiConfidence  Float?
+  aiExtracted   String? // structured fields AI read off the document
+  aiCheckedAt   DateTime?
+  status String @default("PENDING")
+  reviewedById  String?
+  reviewedBy    User?     @relation("ReviewerOD", fields: [reviewedById], references: [id])
+  reviewedAt    DateTime?
+  createdAt     DateTime  @default(now())
+
+  @@index([studentId])
+  @@index([status])
+}
+
+model Exam {
+  id       String   @id @default(cuid())
+  courseId String
+  course   Course   @relation(fields: [courseId], references: [id])
+  title    String
+  examDate DateTime
+  maxMarks Float    @default(100)
+
+  marks              Mark[]
+  papers             Paper[]
+  improvementMetrics ImprovementMetric[]
+
+  @@index([courseId])
+}
+
+model Mark {
+  id        String   @id @default(cuid())
+  examId    String
+  exam      Exam     @relation(fields: [examId], references: [id])
+  studentId String
+  student   User     @relation(fields: [studentId], references: [id])
+  score     Float
+  gradedAt  DateTime @default(now())
+
+  @@unique([examId, studentId])
+}
+
+// Full OCR + NLP + topic-mapping pipeline is in scope (architecture.md Sections 8-11).
+model Paper {
+  id                String            @id @default(cuid())
+  courseId          String
+  course            Course            @relation(fields: [courseId], references: [id])
+  examId            String?
+  exam              Exam?             @relation(fields: [examId], references: [id])
+  uploadedById      String
+  uploadedBy        User              @relation(fields: [uploadedById], references: [id])
+  fileUrl           String
+  processingStatus String @default("QUEUED")
+  createdAt         DateTime          @default(now())
+
+  analyses PaperAnalysis[]
+
+  @@index([courseId])
+  @@index([processingStatus])
+}
+
+model PaperAnalysis {
+  id              String       @id @default(cuid())
+  paperId         String
+  paper           Paper        @relation(fields: [paperId], references: [id])
+  questionNumber  Int
+  questionText    String?
+  topicId         String? // constrained to a real CourseTopic — never free-associated
+  topic           CourseTopic? @relation(fields: [topicId], references: [id])
+  correctness     String? // e.g. "correct" | "partial" | "incorrect"
+  missingConcepts String?
+  errors          String?
+  suggestions     String?
+  confidence      Float?
+  createdAt       DateTime     @default(now())
+
+  @@index([paperId])
+  @@index([topicId])
+}
+
+model AIInsight {
+  id            String      @id @default(cuid())
+  studentId     String
+  student       User        @relation(fields: [studentId], references: [id])
+  topicId       String
+  topic         CourseTopic @relation(fields: [topicId], references: [id])
+  kind          String // WEAK_TOPIC | FOCUS_TOPIC | TIP | RISK
+  content       String
+  sourceDataRef String? // provenance — what data this was derived from
+  confidence    Float?
+  createdAt     DateTime    @default(now())
+
+  @@index([studentId])
+}
+
+// Written only after full-batch aggregation, never per-upload (architecture.md Section 11).
+model ClassInsight {
+  id              String      @id @default(cuid())
+  courseId        String
+  course          Course      @relation(fields: [courseId], references: [id])
+  topicId         String
+  topic           CourseTopic @relation(fields: [topicId], references: [id])
+  affectedPercent Float
+  errorType       String
+  severity        String
+  createdAt       DateTime    @default(now())
+
+  @@index([courseId])
+}
+
+// Advisory text becomes a real row only when a teacher explicitly applies a strategy.
+model TeachingIntervention {
+  id        String      @id @default(cuid())
+  teacherId String
+  teacher   User        @relation(fields: [teacherId], references: [id])
+  topicId   String
+  topic     CourseTopic @relation(fields: [topicId], references: [id])
+  strategy  String
+  appliedAt DateTime    @default(now())
+
+  improvementMetrics ImprovementMetric[]
+
+  @@index([teacherId])
+}
+
+// No before/after claim exists unless a TeachingIntervention row links the two assessments.
+model ImprovementMetric {
+  id              String                @id @default(cuid())
+  courseId        String
+  course          Course                @relation(fields: [courseId], references: [id])
+  topicId         String
+  topic           CourseTopic           @relation(fields: [topicId], references: [id])
+  interventionId  String?
+  intervention    TeachingIntervention? @relation(fields: [interventionId], references: [id])
+  beforeExamId    String?
+  beforeExam      Exam?                 @relation(fields: [beforeExamId], references: [id])
+  beforeScore     Float?
+  afterScore      Float?
+  improvementPct  Float?
+  createdAt       DateTime              @default(now())
+
+  @@index([courseId])
+}
+
+// Add-on: student's own notes against an announced topic (prep for shifted/upcoming classes)
+model Note {
+  id        String      @id @default(cuid())
+  studentId String
+  student   User        @relation(fields: [studentId], references: [id])
+  topicId   String
+  topic     CourseTopic @relation(fields: [topicId], references: [id])
+  content   String
+  createdAt DateTime    @default(now())
+  updatedAt DateTime    @updatedAt
+
+  @@unique([studentId, topicId])
+}
+
+model Notification {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id])
+  type      String
+  message   String
+  read      Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  @@index([userId, read])
+}
+
+// DB-backed async queue — replaces Redis/BullMQ (MASTER_PROMPT.md Section 4).
+// A worker loop polls QUEUED jobs; endpoints return immediately with job id.
+model Job {
+  id        String            @id @default(cuid())
+  type String
+  payload   String
+  status String @default("QUEUED")
+  result    String?
+  error     String?
+  createdAt DateTime          @default(now())
+  updatedAt DateTime          @updatedAt
+
+  @@index([status, type])
+}
